@@ -1,27 +1,21 @@
 {
-    "projection_path": "projections.csv", // This is where projections are loaded from -- the required columns are "Name" and "Fpts"
-    "ownership_path": "ownership.csv", // This is where ownership is loaded from -- the required columns are "Name" and "Own%"
-    "player_path": "player_ids.csv", // This is where player ids are loaded from -- this is the direct player ID export from DraftKings/Fanduel found on the contest or edit lineups page.
-    "boom_bust_path": "boom_bust.csv", // This is where boom/bust data (top golfers) is loaded from -- the required columns are "Name", "stddev", and "ceiling"
-    "contest_structure_path": "contest_structure.csv", // This is where GPP sim tournament strucure is loaded from -- as seen above, the required columns are "Place", "Payout", "Field Size", "Entry Fee"
+    "projection_path": "projections.csv",
+    "ownership_path": "ownership.csv",
+    "player_path": "player_ids.csv",
+    "boom_bust_path": "boom_bust.csv",
+    "contest_structure_path": "contest_structure.csv",
     "projection_minimum": 5,
     "randomness": 100,
     "at_least": {
-        "2": [
-            ["Justin Thomas", "Jordan Spieth", "Tiger Woods"] // This will use at least 2 of these players
-        ],
-        "1": [
-            ["Justin Thomas", "Jordan Spieth"] // This will use at least 1 of these players
-        ]
+        "2": [["Justin Thomas", "Jordan Spieth", "Tiger Woods"]],
+        "1": [["Justin Thomas", "Jordan Spieth"]]
     },
     "at_most": {
         "1": [
-            ["Justin Thomas", "Jordan Spieth"], // Will use at most 1 of these players, useful if you're trying to avoid specific tee time stacks.
+            ["Justin Thomas", "Jordan Spieth"],
             ["Jon Rahm", "Brooks Koepka"]
         ],
-        "2": [
-            ["Justin Thomas", "Jordan Spieth", "Jon Rahm", "Brooks Koepka"] // Will use at most 2 of these players
-        ]
+        "2": [["Justin Thomas", "Jordan Spieth", "Jon Rahm", "Brooks Koepka"]]
     },
     "min_lineup_salary": 49200,
     "max_pct_off_optimal": 0.2
