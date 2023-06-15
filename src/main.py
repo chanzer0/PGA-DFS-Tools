@@ -1,5 +1,5 @@
 import sys
-#from PGA_optimizer import *
+from pga_optimizer import *
 from pga_gpp_simulator import *
 #from PGA_evolutionary_lineup_selector import *
 #from PGA_showdown_optimizer import *
@@ -14,6 +14,8 @@ def main(arguments):
 
     site = arguments[1]
     process = arguments[2]
+    
+    print(arguments)
 
     if process == 'opto':
         num_lineups = arguments[3]
@@ -22,12 +24,12 @@ def main(arguments):
         opto.optimize()
         opto.output()
 
-    elif process == 'sd':
-        num_lineups = arguments[3]
-        num_uniques = arguments[4]
-        opto = PGA_Showdown_Optimizer(site, num_lineups, num_uniques)
-        opto.optimize()
-        opto.output()
+    # elif process == 'sd':
+    #     num_lineups = arguments[3]
+    #     num_uniques = arguments[4]
+    #     opto = PGA_Showdown_Optimizer(site, num_lineups, num_uniques)
+    #     opto.optimize()
+    #     opto.output()
         
 
     if process == 'sim':
@@ -55,9 +57,9 @@ def main(arguments):
         sim.run_tournament_simulation()
         sim.output()
 
-    elif process == 'swaptimize':
-        opto = PGA_Late_Swaptimizer(site)
-        opto.swaptimize()
+    # elif process == 'swaptimize':
+    #     opto = PGA_Late_Swaptimizer(site)
+    #     opto.swaptimize()
 
 
 if __name__ == "__main__":
