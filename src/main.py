@@ -55,10 +55,5 @@ def main(arguments):
         sim.run_tournament_simulation()
         sim.output()
 
-    elif process == 'swaptimize':
-        opto = PGA_Late_Swaptimizer(site)
-        opto.swaptimize()
-
-
 if __name__ == "__main__":
     main(sys.argv)

@@ -167,11 +167,11 @@ class PGA_GPP_Simulator:
             reader = csv.DictReader(file)
             for row in reader:
                 player_name = row['Name'].replace('-', '#').lower()
-                if float(row['Total Pts']) < self.projection_minimum:
+                if float(row['Fpts']) < self.projection_minimum:
                     continue
                 self.player_dict[player_name] = {'Fpts': 0, 'Position': [
                 ], 'ID': 0, 'Salary': 0, 'StdDev': 0, 'Ceiling': 0, 'Ownership': 0.1, 'In Lineup': False}
-                self.player_dict[player_name]['Fpts'] = float(row['Total Pts'])
+                self.player_dict[player_name]['Fpts'] = float(row['Fpts'])
                 self.player_dict[player_name]['Salary'] = int(
                     row['Salary'].replace(',', ''))
 
@@ -192,7 +192,7 @@ class PGA_GPP_Simulator:
                 player_name = row['Name'].replace('-', '#').lower()
                 if player_name in self.player_dict:
                     self.player_dict[player_name]['Ownership'] = float(
-                        row['Ownership %'])
+                        row['Own%'])
 
     # Load standard deviations
     def load_boom_bust(self, path):
@@ -266,10 +266,9 @@ class PGA_GPP_Simulator:
                 reasonable_projection = optimal_score - \
                     (max_pct_off_optimal*optimal_score)
                 if proj >= reasonable_projection:
-                    if not set(['jakob poeltl', 'zach collins']).issubset(lineup):
-                        reject = False
-                        lus[lu_num] = {
-                            'Lineup': lineup, 'Wins': 0, 'Top10': 0, 'ROI': 0, 'Cashes': 0, 'Type': 'generated'}
+                    reject = False
+                    lus[lu_num] = {
+                        'Lineup': lineup, 'Wins': 0, 'Top10': 0, 'ROI': 0, 'Cashes': 0, 'Type': 'generated'}
         return lus
 
     def generate_field_lineups(self):
@@ -373,6 +372,8 @@ class PGA_GPP_Simulator:
         diff = end_time-start_time
         print(str(self.num_iterations) +
               ' tournament simulations finished in ' + str(diff) + 'seconds. Outputting.')
+        #for p in self.player_dict.keys():
+        #    print(p, self.player_dict[p]['ID'])
 
     def output(self):
         unique = {}
