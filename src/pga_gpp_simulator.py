@@ -229,7 +229,7 @@ class PGA_GPP_Simulator:
     # Load ownership from file
     def load_ownership(self, path):
         # Read ownership into a dictionary
-        with open(path) as file:
+        with open(path, encoding="utf-8-sig") as file:
             reader = csv.DictReader(file)
             for row in reader:
                 player_name = row["Name"].replace("-", "#").lower()
@@ -238,9 +238,10 @@ class PGA_GPP_Simulator:
 
     # Load standard deviations
     def load_boom_bust(self, path):
-        with open(path) as file:
+        with open(path, encoding="utf-8-sig") as file:
             reader = csv.DictReader(file)
             for row in reader:
+                print(row)
                 player_name = row["Name"].replace("-", "#").lower()
                 if player_name in self.player_dict:
                     self.player_dict[player_name]["StdDev"] = float(row["stddev"])
