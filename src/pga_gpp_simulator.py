@@ -229,7 +229,7 @@ class PGA_GPP_Simulator:
     # Load ownership from file
     def load_ownership(self, path):
         # Read ownership into a dictionary
-        with open(path) as file:
+        with open(path, encoding="utf-8-sig") as file:
             reader = csv.DictReader(file)
             for row in reader:
                 player_name = row["Name"].replace("-", "#").lower()
@@ -238,7 +238,7 @@ class PGA_GPP_Simulator:
 
     # Load standard deviations
     def load_boom_bust(self, path):
-        with open(path) as file:
+        with open(path, encoding="utf-8-sig") as file:
             reader = csv.DictReader(file)
             for row in reader:
                 player_name = row["Name"].replace("-", "#").lower()
@@ -298,6 +298,7 @@ class PGA_GPP_Simulator:
     ):
         # new random seed for each lineup (without this there is a ton of dupes)
         np.random.seed(lu_num)
+        min_salary = np.quantile(salaries, 0.3)
         lus = {}
         # make sure nobody is already showing up in a lineup
         if sum(in_lineup) != 0:
@@ -309,22 +310,32 @@ class PGA_GPP_Simulator:
             if sum(in_lineup) != 0:
                 in_lineup.fill(0)
             lineup = []
+            q = 0
             for pos in pos_matrix:
-                # check for players eligible for the position and make sure they arent in a lineup, returns a list of indices of available player
-                valid_players = np.where((pos > 0) & (in_lineup == 0))
+                # calculate difference between current lineup salary and salary ceiling
+                if q < 5:
+                    salary_diff = salary_ceiling - (salary + min_salary)
+                else:
+                    salary_diff = salary_ceiling - salary
+                # check for players eligible for the position and make sure they arent in a lineup and the player's salary is less than or equal to salary_diff, returns a list of indices of available player
+                valid_players = np.where((pos > 0) & (in_lineup == 0) & (salaries <= salary_diff))
                 # grab names of players eligible
                 plyr_list = names[valid_players]
                 # create np array of probability of being seelcted based on ownership and who is eligible at the position
                 prob_list = ownership[valid_players]
                 prob_list = prob_list / prob_list.sum()
-                choice = np.random.choice(a=plyr_list, p=prob_list)
+                try:
+                    choice = np.random.choice(a=plyr_list, p=prob_list)
+                except ValueError:
+                    break
                 choice_idx = np.where(names == choice)[0]
                 lineup.append(choice)
                 in_lineup[choice_idx] = 1
                 salary += salaries[choice_idx]
                 proj += projections[choice_idx]
+                q+=1
             # Must have a reasonable salary
-            if salary >= salary_floor and salary <= salary_ceiling:
+            if salary >= salary_floor and salary <= salary_ceiling and len(lineup) == 6:
                 # Must have a reasonable projection (within 60% of optimal) **people make a lot of bad lineups
                 reasonable_projection = optimal_score - (
                     max_pct_off_optimal * optimal_score
