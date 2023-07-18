@@ -258,29 +258,34 @@ class PGA_GPP_Simulator:
         )
         with open(path) as file:
             if self.site == "dk":
-                reader = pd.read_csv(file)
+                reader = pd.read_csv(file, on_bad_lines='warn')
                 for i, row in reader.iterrows():
-                    # print(row)
-                    if i == self.field_size:
-                        break
-                    lineup = [
-                        row[0].split("(")[0][:-1].replace("-", "#").lower(),
-                        row[1].split("(")[0][:-1].replace("-", "#").lower(),
-                        row[2].split("(")[0][:-1].replace("-", "#").lower(),
-                        row[3].split("(")[0][:-1].replace("-", "#").lower(),
-                        row[4].split("(")[0][:-1].replace("-", "#").lower(),
-                        row[5].split("(")[0][:-1].replace("-", "#").lower(),
-                    ]
-                    # storing if this lineup was made by an optimizer or with the generation process in this script
-                    self.field_lineups[i] = {
-                        "Lineup": lineup,
-                        "Wins": 0,
-                        "Top10": 0,
-                        "ROI": 0,
-                        "Cashes": 0,
-                        "Type": "opto",
-                    }
-                    i += 1
+                    #fix fc printing out empty rows
+                        # print(row)
+                    try:
+                        if i == self.field_size:
+                            break
+                        lineup = [
+                            row[0].split("(")[0][:-1].replace("-", "#").lower(),
+                            row[1].split("(")[0][:-1].replace("-", "#").lower(),
+                            row[2].split("(")[0][:-1].replace("-", "#").lower(),
+                            row[3].split("(")[0][:-1].replace("-", "#").lower(),
+                            row[4].split("(")[0][:-1].replace("-", "#").lower(),
+                            row[5].split("(")[0][:-1].replace("-", "#").lower(),
+                        ]
+                        # storing if this lineup was made by an optimizer or with the generation process in this script
+                        self.field_lineups[i] = {
+                            "Lineup": lineup,
+                            "Wins": 0,
+                            "Top10": 0,
+                            "ROI": 0,
+                            "Cashes": 0,
+                            "Type": "opto",
+                        }
+                        i += 1
+                    except:
+                        print('bad lineup row ' + str(i))
+                        i+=1
 
     @staticmethod
     def generate_lineups(
@@ -298,7 +303,7 @@ class PGA_GPP_Simulator:
     ):
         # new random seed for each lineup (without this there is a ton of dupes)
         np.random.seed(lu_num)
-        min_salary = np.quantile(salaries, 0.3)
+        min_salary = np.quantile(salaries, 0.2)
         lus = {}
         # make sure nobody is already showing up in a lineup
         if sum(in_lineup) != 0:
