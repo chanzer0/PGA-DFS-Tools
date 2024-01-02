@@ -82,10 +82,8 @@ The structure for the config is as follows:
 
 ```
 {
-    "projection_path": "projections.csv", // This is where projections are loaded from -- the required columns are "Name" and "Fpts"
-    "ownership_path": "ownership.csv", // This is where ownership is loaded from -- the required columns are "Name" and "Own%"
+    "projection_path": "projections.csv", // This is where projections are loaded from -- the required columns are Name,Salary,Fpts,Own%,Stddev,fieldFpts. MakeCut and WinProb are optional   columns that, when provided, fit each player's simulated distributions to a gaussian mixture model that tries to approximate the bimodal distribution seen in PGA cut events.
     "player_path": "player_ids.csv", // This is where player ids are loaded from -- this is the direct player ID export from DraftKings/Fanduel found on the contest or edit lineups page.
-    "boom_bust_path": "boom_bust.csv", // This is where boom/bust data (top golfers) is loaded from -- the required columns are "Name", "stddev", and "ceiling"
     "contest_structure_path": "contest_structure.csv", // This is where GPP sim tournament strucure is loaded from -- as seen above, the required columns are "Place", "Payout", "Field Size", "Entry Fee"
     "projection_minimum": 5,
     "randomness": 100,
@@ -107,7 +105,8 @@ The structure for the config is as follows:
         ]
     },
     "min_lineup_salary": 49200,
-    "max_pct_off_optimal": 0.2
+    "max_pct_off_optimal": 0.2,
+    "cut_event": true // Denotes if the event has a cut, which effects the simulated distributions
 }
 ```
 
