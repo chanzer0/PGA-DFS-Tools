@@ -286,6 +286,7 @@ class PGA_GPP_Simulator:
             lineup = []
             bad_lus = []
             bad_players = []
+            
             j = 0
             for i, row in reader.iterrows():
                 if i == self.field_size:
@@ -294,6 +295,7 @@ class PGA_GPP_Simulator:
                     int(self.extract_id(str(row[q])))
                     for q in range(len(self.roster_construction))
                 ]
+                lu_names = []
                 # storing if this lineup was made by an optimizer or with the generation process in this script
                 error = False
                 for l in lineup:
@@ -304,11 +306,17 @@ class PGA_GPP_Simulator:
                         #    print(self.id_name_dict[l])
                         bad_players.append(l)
                         error = True
+                    else:
+                        for k in self.player_dict:
+                            if self.player_dict[k]["ID"] == l:
+                                lu_names.append(k)
                 if len(lineup) < len(self.roster_construction):
                     print("lineup {} doesn't match roster construction size".format(i))
                     continue
                 # storing if this lineup was made by an optimizer or with the generation process in this script
                 error = False
+                if len(lu_names) != len(self.roster_construction):
+                    error = True
                 if not error:
                     lineup_list = sorted(lineup)           
                     lineup_set = frozenset(lineup_list)
@@ -318,7 +326,7 @@ class PGA_GPP_Simulator:
                         self.seen_lineups[lineup_set] += 1
                     else:
                         self.field_lineups[j] = {
-                                "Lineup": lineup,
+                                "Lineup": lu_names,
                                 "Wins": 0,
                                 "Top1Percent": 0,
                                 "ROI": 0,
