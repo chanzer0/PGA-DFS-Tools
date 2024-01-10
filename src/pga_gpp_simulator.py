@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
+import seaborn as sns 
 
 
 @nb.jit(nopython=True)  # nopython mode ensures the function is fully optimized
@@ -576,6 +577,61 @@ class PGA_GPP_Simulator:
                 payout_index += lineup_count
         return combined_result_array
 
+    @staticmethod
+    def worker_function(player_data, num_iterations, plot_folder, kmeans_5, scaler):
+        # Unpack player data
+        k, v = player_data
+
+        # Extract player-specific data
+        makecut = v['MakeCut']
+        salary = v['Salary']
+        winprob = v['WinProb']
+
+        # Create and scale the new data
+        new_data = pd.DataFrame([[salary, makecut, winprob]], columns=['salary', 'make_cut_prob', 'win_prob'])
+        scaled_new_data = scaler.transform(new_data)
+
+        # Predict the cluster
+        player_cluster = kmeans_5.predict(scaled_new_data)[0]
+
+        # Load the GMM model for the predicted cluster
+        gmm = pickle.load(open(f"src/cluster_data/gmm_cluster_{player_cluster}.pkl", "rb"))
+
+        # Player's projected fantasy points
+        player_projected_fpts = v['Fpts']
+
+        # Calculate the offset for the fantasy points dimension
+        mean_offset = player_projected_fpts - gmm.means_[:, 0].mean()
+
+        # Adjust the GMM means
+        adjusted_means = gmm.means_.copy()
+        adjusted_means[:, 0] += mean_offset
+
+        # Vectorized component selection
+        chosen_components = np.random.choice(gmm.n_components, size=num_iterations, p=gmm.weights_)
+
+        # Vectorized sampling from the chosen components
+        samples = np.array([np.random.multivariate_normal(adjusted_means[component], gmm.covariances_[component]) for component in chosen_components])
+
+        # # Prepare for plotting
+        # sns.set_theme(style="whitegrid")
+        # plt.figure(figsize=(8, 4))
+        # sns.histplot(samples[:, 0], bins=100, kde=True, color='g', alpha=0.6)
+        # plt.title(f'Simulated Fantasy Points Distribution for Player {k} with Cluster {player_cluster}')
+        # plt.xlabel('Fantasy Points')
+        # plt.ylabel('Density')
+
+        # # Save the plot
+        # plot_path = os.path.join(plot_folder, f'player_{k}_simulation.png')
+        # plt.savefig(plot_path)
+        # plt.close()
+
+        # print(f'{k} simulation complete')
+
+        # Return the relevant results
+        return k, player_cluster, samples[:, 0]  # Assuming fantasy points are the first dimension
+
+
     def run_tournament_simulation(self):
         print("Running " + str(self.num_iterations) + " simulations")
         start_time = time.time()
@@ -589,37 +645,22 @@ class PGA_GPP_Simulator:
         if self.cut_event:
             kmeans_5 = pickle.load(open("src/cluster_data/kmeans_5_model.pkl", "rb"))
             scaler = pickle.load(open("src/cluster_data/scaler.pkl", "rb"))
-            for k, v in self.player_dict.items():
-                makecut = v['MakeCut']
-                salary = v['Salary']
-                winprob = v['WinProb']
+            player_data = list(self.player_dict.items())
 
-                # Create a DataFrame for the new data
-                # Note the double square brackets to ensure it's treated as one row
-                new_data = pd.DataFrame([[salary, makecut, winprob]], columns=['salary', 'make_cut_prob', 'win_prob'])
-                
-                # Scale the new data
-                scaled_new_data = scaler.transform(new_data)
+            # Create a pool of workers and distribute the work
+            with mp.Pool() as pool:
+                results = pool.starmap(self.worker_function, [(data, self.num_iterations, plot_folder, kmeans_5, scaler) for data in player_data])
 
-                # Predict the cluster
-                player_cluster = kmeans_5.predict(scaled_new_data)[0]  #
+            # Initialize or clear the temp_fpts_dict
 
-                # Load the GMM model for the predicted cluster
-                gmm = pickle.load(open(f"src/cluster_data/gmm_cluster_{player_cluster}.pkl", "rb"))
+            # Process results
+            for k, player_cluster, samples in results:
+                # Update the temp_fpts_dict with the actual samples
+                temp_fpts_dict[k] = samples
 
-                # Sample from the GMM
-                samples = gmm.sample(self.num_iterations)
-                temp_fpts_dict[k] = samples[0][:, 0]  # Assuming fantasy points are the first dimension
-
-                # # Save the distribution of simulated fantasy points for each player as an image
-                # plt.figure(figsize=(8, 4))
-                # plt.hist(temp_fpts_dict[k], bins=30, density=True, alpha=0.6, color='g')
-                # plt.title(f'Simulated Fantasy Points Distribution for Player {k} with Cluster {player_cluster}')
-                # plt.xlabel('Fantasy Points')
-                # plt.ylabel('Density')
-                # plot_path = os.path.join(plot_folder, f'player_{k}_simulation.png')
-                # plt.savefig(plot_path)
-                # plt.close()
+                # # Optionally, print out some basic info about the samples
+                # print(f'Player {k} with projection {self.player_dict[k]["Fpts"]} has been assigned to cluster {player_cluster}, '
+                #     f'has sample mean {samples.mean()}, and sample std {samples.std()}')
 
         else:
             temp_fpts_dict = {
