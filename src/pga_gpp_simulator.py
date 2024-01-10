@@ -16,7 +16,7 @@ from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 import seaborn as sns 
-
+import scipy.stats as stats
 
 @nb.jit(nopython=True)  # nopython mode ensures the function is fully optimized
 def salary_boost(salary, max_salary):
@@ -225,11 +225,11 @@ class PGA_GPP_Simulator:
                 if row["salary"]:
                     sal = int(row["salary"].replace(",", ""))
                 if 'makecut' in row:
-                    makecut = row['makecut']
+                    makecut = float(row['makecut'])
                 else:
                     makecut = 0
                 if 'winprob' in row:
-                    winprob = row['winprob']
+                    winprob = float(row['winprob'])
                 else:
                     winprob = 0
                 if "stddev" in row:
@@ -590,7 +590,6 @@ class PGA_GPP_Simulator:
         # Create and scale the new data
         new_data = pd.DataFrame([[salary, makecut, winprob]], columns=['salary', 'make_cut_prob', 'win_prob'])
         scaled_new_data = scaler.transform(new_data)
-
         # Predict the cluster
         player_cluster = kmeans_5.predict(scaled_new_data)[0]
 
@@ -600,19 +599,70 @@ class PGA_GPP_Simulator:
         # Player's projected fantasy points
         player_projected_fpts = v['Fpts']
 
-        # Calculate the offset for the fantasy points dimension
-        mean_offset = player_projected_fpts - gmm.means_[:, 0].mean()
+        # Player's make-cut probability
+        player_make_cut_prob = v['MakeCut']
 
-        # Adjust the GMM means
-        adjusted_means = gmm.means_.copy()
-        adjusted_means[:, 0] += mean_offset
+        # Determine GMM components for 'miss-cut' and 'make-cut'
+        miss_cut_component = 0 if gmm.means_[0, 0] < gmm.means_[1, 0] else 1
+        make_cut_component = 1 - miss_cut_component
 
-        # Vectorized component selection
-        chosen_components = np.random.choice(gmm.n_components, size=num_iterations, p=gmm.weights_)
+        # Vectorized component selection based on make-cut probability
+        chosen_components = np.random.choice(
+            [miss_cut_component, make_cut_component],
+            size=num_iterations,
+            p=[1 - player_make_cut_prob, player_make_cut_prob]
+        )
 
-        # Vectorized sampling from the chosen components
-        samples = np.array([np.random.multivariate_normal(adjusted_means[component], gmm.covariances_[component]) for component in chosen_components])
+        # Generate samples based on the chosen component
+        samples = np.array([
+            np.random.multivariate_normal(
+                gmm.means_[component], gmm.covariances_[component]
+            ) for component in chosen_components
+        ])
 
+        # Post-sampling mean adjustment if needed
+        sample_mean = np.mean(samples[:, 0])
+        # Calculate the standard deviation of the samples
+        sample_std_dev = np.std(samples[:, 0])
+
+        # Set the threshold to be a fraction of the standard deviation
+        threshold_factor = 0.5  # This factor can be tuned
+        threshold = threshold_factor * sample_std_dev
+
+        # Apply the mean offset if it's above the threshold
+        def adjust_samples(samples, projected_median, std_dev, make_cut_prob):
+            # Determine the direction and magnitude of skewness based on the projected median
+            skewness = (projected_median - np.median(samples)) / std_dev
+            skewed_samples = stats.skewnorm.rvs(a=skewness, loc=np.median(samples), scale=std_dev, size=len(samples))
+            
+            # Soft adjustment based on make_cut_prob
+            adjusted_samples = samples + (skewed_samples - samples) * make_cut_prob
+            return adjusted_samples
+
+        # Inside your simulation loop:
+        # ... [existing code to generate initial samples] ...
+
+        # Calculate the standard deviation of the samples
+        sample_std_dev = np.std(samples[:, 0])
+        
+        # Calculate the median of the samples
+        current_median = np.median(samples[:, 0])
+
+        # Determine the shift needed to align the median with the projection
+        median_shift = player_projected_fpts - current_median
+
+        # Shift the entire samples array
+        samples[:, 0] += median_shift
+
+        # # Apply the soft median adjustment
+        # samples[:, 0] = adjust_samples(
+        #     samples[:, 0],
+        #     player_projected_fpts,
+        #     sample_std_dev,
+        #     player_make_cut_prob
+        # )
+        # if np.abs(mean_offset) > threshold:
+        #     samples[:, 0] += mean_offset
         # # Prepare for plotting
         # sns.set_theme(style="whitegrid")
         # plt.figure(figsize=(8, 4))
@@ -626,7 +676,14 @@ class PGA_GPP_Simulator:
         # plt.savefig(plot_path)
         # plt.close()
 
-        # print(f'{k} simulation complete')
+        #print(f'{k} simulation complete')
+
+        # sample_min = np.min(samples)
+        # sample_max = np.max(samples)
+        # q25, q75 = np.percentile(samples, [25, 75])
+
+        # print(f'Player {k} with projection {v["Fpts"]} has been assigned to cluster {player_cluster}, '
+        #     f'has sample mean {samples.mean()}, sample median {np.median(samples)} and sample std {samples.std()} and gmm mean {gmm.means_[0, 0], gmm.means_[1, 0]} and new data {new_data} sample min {sample_min} sample max {sample_max} q25 {q25} q75 {q75}')
 
         # Return the relevant results
         return k, player_cluster, samples[:, 0]  # Assuming fantasy points are the first dimension
@@ -659,8 +716,6 @@ class PGA_GPP_Simulator:
                 temp_fpts_dict[k] = samples
 
                 # # Optionally, print out some basic info about the samples
-                # print(f'Player {k} with projection {self.player_dict[k]["Fpts"]} has been assigned to cluster {player_cluster}, '
-                #     f'has sample mean {samples.mean()}, and sample std {samples.std()}')
 
         else:
             temp_fpts_dict = {
