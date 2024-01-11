@@ -15,7 +15,8 @@ import matplotlib.pyplot as plt
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
-
+import seaborn as sns 
+import scipy.stats as stats
 
 @nb.jit(nopython=True)  # nopython mode ensures the function is fully optimized
 def salary_boost(salary, max_salary):
@@ -224,11 +225,11 @@ class PGA_GPP_Simulator:
                 if row["salary"]:
                     sal = int(row["salary"].replace(",", ""))
                 if 'makecut' in row:
-                    makecut = row['makecut']
+                    makecut = float(row['makecut'])
                 else:
                     makecut = 0
                 if 'winprob' in row:
-                    winprob = row['winprob']
+                    winprob = float(row['winprob'])
                 else:
                     winprob = 0
                 if "stddev" in row:
@@ -266,6 +267,14 @@ class PGA_GPP_Simulator:
     def remap(self, fieldnames):
         return ["PG", "PG2", "SG", "SG2", "SF", "SF2", "PF", "PF2", "C"]
 
+    def extract_id(self,cell_value):
+        if "(" in cell_value and ")" in cell_value:
+            return cell_value.split("(")[1].replace(")", "")
+        elif ":" in cell_value:
+            return cell_value.split(":")[0]
+        else:
+            return cell_value
+
     def load_lineups_from_file(self):
         print("loading lineups")
         i = 0
@@ -278,29 +287,37 @@ class PGA_GPP_Simulator:
             lineup = []
             bad_lus = []
             bad_players = []
+            
             j = 0
             for i, row in reader.iterrows():
                 if i == self.field_size:
                     break
                 lineup = [
-                    self.extract_id(str(row[q]))
+                    int(self.extract_id(str(row[q])))
                     for q in range(len(self.roster_construction))
                 ]
+                lu_names = []
                 # storing if this lineup was made by an optimizer or with the generation process in this script
                 error = False
                 for l in lineup:
                     ids = [self.player_dict[k]["ID"] for k in self.player_dict]
                     if l not in ids:
                         print("player id {} in lineup {} not found in player dict".format(l, i))
-                        if l in self.id_name_dict:
-                            print(self.id_name_dict[l])
+                        #if l in self.id_name_dict:
+                        #    print(self.id_name_dict[l])
                         bad_players.append(l)
                         error = True
+                    else:
+                        for k in self.player_dict:
+                            if self.player_dict[k]["ID"] == l:
+                                lu_names.append(k)
                 if len(lineup) < len(self.roster_construction):
                     print("lineup {} doesn't match roster construction size".format(i))
                     continue
                 # storing if this lineup was made by an optimizer or with the generation process in this script
                 error = False
+                if len(lu_names) != len(self.roster_construction):
+                    error = True
                 if not error:
                     lineup_list = sorted(lineup)           
                     lineup_set = frozenset(lineup_list)
@@ -310,7 +327,7 @@ class PGA_GPP_Simulator:
                         self.seen_lineups[lineup_set] += 1
                     else:
                         self.field_lineups[j] = {
-                                "Lineup": lineup,
+                                "Lineup": lu_names,
                                 "Wins": 0,
                                 "Top1Percent": 0,
                                 "ROI": 0,
@@ -560,6 +577,118 @@ class PGA_GPP_Simulator:
                 payout_index += lineup_count
         return combined_result_array
 
+    @staticmethod
+    def worker_function(player_data, num_iterations, plot_folder, kmeans_5, scaler):
+        # Unpack player data
+        k, v = player_data
+
+        # Extract player-specific data
+        makecut = v['MakeCut']
+        salary = v['Salary']
+        winprob = v['WinProb']
+
+        # Create and scale the new data
+        new_data = pd.DataFrame([[salary, makecut, winprob]], columns=['salary', 'make_cut_prob', 'win_prob'])
+        scaled_new_data = scaler.transform(new_data)
+        # Predict the cluster
+        player_cluster = kmeans_5.predict(scaled_new_data)[0]
+
+        # Load the GMM model for the predicted cluster
+        gmm = pickle.load(open(f"src/cluster_data/gmm_cluster_{player_cluster}.pkl", "rb"))
+
+        # Player's projected fantasy points
+        player_projected_fpts = v['Fpts']
+
+        # Player's make-cut probability
+        player_make_cut_prob = v['MakeCut']
+
+        # Determine GMM components for 'miss-cut' and 'make-cut'
+        miss_cut_component = 0 if gmm.means_[0, 0] < gmm.means_[1, 0] else 1
+        make_cut_component = 1 - miss_cut_component
+
+        # Vectorized component selection based on make-cut probability
+        chosen_components = np.random.choice(
+            [miss_cut_component, make_cut_component],
+            size=num_iterations,
+            p=[1 - player_make_cut_prob, player_make_cut_prob]
+        )
+
+        # Generate samples based on the chosen component
+        samples = np.array([
+            np.random.multivariate_normal(
+                gmm.means_[component], gmm.covariances_[component]
+            ) for component in chosen_components
+        ])
+
+        # Post-sampling mean adjustment if needed
+        sample_mean = np.mean(samples[:, 0])
+        # Calculate the standard deviation of the samples
+        sample_std_dev = np.std(samples[:, 0])
+
+        # Set the threshold to be a fraction of the standard deviation
+        threshold_factor = 0.5  # This factor can be tuned
+        threshold = threshold_factor * sample_std_dev
+
+        # Apply the mean offset if it's above the threshold
+        def adjust_samples(samples, projected_median, std_dev, make_cut_prob):
+            # Determine the direction and magnitude of skewness based on the projected median
+            skewness = (projected_median - np.median(samples)) / std_dev
+            skewed_samples = stats.skewnorm.rvs(a=skewness, loc=np.median(samples), scale=std_dev, size=len(samples))
+            
+            # Soft adjustment based on make_cut_prob
+            adjusted_samples = samples + (skewed_samples - samples) * make_cut_prob
+            return adjusted_samples
+
+        # Inside your simulation loop:
+        # ... [existing code to generate initial samples] ...
+
+        # Calculate the standard deviation of the samples
+        sample_std_dev = np.std(samples[:, 0])
+        
+        # Calculate the median of the samples
+        current_median = np.median(samples[:, 0])
+
+        # Determine the shift needed to align the median with the projection
+        median_shift = player_projected_fpts - current_median
+
+        # Shift the entire samples array
+        samples[:, 0] += median_shift
+
+        # # Apply the soft median adjustment
+        # samples[:, 0] = adjust_samples(
+        #     samples[:, 0],
+        #     player_projected_fpts,
+        #     sample_std_dev,
+        #     player_make_cut_prob
+        # )
+        # if np.abs(mean_offset) > threshold:
+        #     samples[:, 0] += mean_offset
+        # # Prepare for plotting
+        # sns.set_theme(style="whitegrid")
+        # plt.figure(figsize=(8, 4))
+        # sns.histplot(samples[:, 0], bins=100, kde=True, color='g', alpha=0.6)
+        # plt.title(f'Simulated Fantasy Points Distribution for Player {k} with Cluster {player_cluster}')
+        # plt.xlabel('Fantasy Points')
+        # plt.ylabel('Density')
+
+        # # Save the plot
+        # plot_path = os.path.join(plot_folder, f'player_{k}_simulation.png')
+        # plt.savefig(plot_path)
+        # plt.close()
+
+        #print(f'{k} simulation complete')
+
+        # sample_min = np.min(samples)
+        # sample_max = np.max(samples)
+        # q25, q75 = np.percentile(samples, [25, 75])
+
+        # print(f'Player {k} with projection {v["Fpts"]} has been assigned to cluster {player_cluster}, '
+        #     f'has sample mean {samples.mean()}, sample median {np.median(samples)} and sample std {samples.std()} and gmm mean {gmm.means_[0, 0], gmm.means_[1, 0]} and new data {new_data} sample min {sample_min} sample max {sample_max} q25 {q25} q75 {q75}')
+
+        # Return the relevant results
+        return k, player_cluster, samples[:, 0]  # Assuming fantasy points are the first dimension
+
+
     def run_tournament_simulation(self):
         print("Running " + str(self.num_iterations) + " simulations")
         start_time = time.time()
@@ -573,37 +702,20 @@ class PGA_GPP_Simulator:
         if self.cut_event:
             kmeans_5 = pickle.load(open("src/cluster_data/kmeans_5_model.pkl", "rb"))
             scaler = pickle.load(open("src/cluster_data/scaler.pkl", "rb"))
-            for k, v in self.player_dict.items():
-                makecut = v['MakeCut']
-                salary = v['Salary']
-                winprob = v['WinProb']
+            player_data = list(self.player_dict.items())
 
-                # Create a DataFrame for the new data
-                # Note the double square brackets to ensure it's treated as one row
-                new_data = pd.DataFrame([[salary, makecut, winprob]], columns=['salary', 'make_cut_prob', 'win_prob'])
-                
-                # Scale the new data
-                scaled_new_data = scaler.transform(new_data)
+            # Create a pool of workers and distribute the work
+            with mp.Pool() as pool:
+                results = pool.starmap(self.worker_function, [(data, self.num_iterations, plot_folder, kmeans_5, scaler) for data in player_data])
 
-                # Predict the cluster
-                player_cluster = kmeans_5.predict(scaled_new_data)[0]  #
+            # Initialize or clear the temp_fpts_dict
 
-                # Load the GMM model for the predicted cluster
-                gmm = pickle.load(open(f"src/cluster_data/gmm_cluster_{player_cluster}.pkl", "rb"))
+            # Process results
+            for k, player_cluster, samples in results:
+                # Update the temp_fpts_dict with the actual samples
+                temp_fpts_dict[k] = samples
 
-                # Sample from the GMM
-                samples = gmm.sample(self.num_iterations)
-                temp_fpts_dict[k] = samples[0][:, 0]  # Assuming fantasy points are the first dimension
-
-                # # Save the distribution of simulated fantasy points for each player as an image
-                # plt.figure(figsize=(8, 4))
-                # plt.hist(temp_fpts_dict[k], bins=30, density=True, alpha=0.6, color='g')
-                # plt.title(f'Simulated Fantasy Points Distribution for Player {k} with Cluster {player_cluster}')
-                # plt.xlabel('Fantasy Points')
-                # plt.ylabel('Density')
-                # plot_path = os.path.join(plot_folder, f'player_{k}_simulation.png')
-                # plt.savefig(plot_path)
-                # plt.close()
+                # # Optionally, print out some basic info about the samples
 
         else:
             temp_fpts_dict = {
