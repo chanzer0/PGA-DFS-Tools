@@ -1,13 +1,10 @@
+import itertools
 import json
 import csv
 import os
 import datetime
-import pytz
-import timedelta
 import numpy as np
 import pulp as plp
-from itertools import groupby
-from random import shuffle, choice
 
 
 class PGA_Optimizer:
@@ -18,10 +15,11 @@ class PGA_Optimizer:
     num_lineups = None
     num_uniques = None
     team_list = []
-    lineups = {}
+    lineups = []
     player_dict = {}
     at_least = {}
     at_most = {}
+    exactly = {}
     team_limits = {}
     matchup_limits = {}
     matchup_at_least = {}
@@ -44,23 +42,11 @@ class PGA_Optimizer:
         )
         self.load_projections(projection_path)
 
-        ownership_path = os.path.join(
-            os.path.dirname(__file__),
-            "../{}_data/{}".format(site, self.config["ownership_path"]),
-        )
-        self.load_ownership(ownership_path)
-
         player_path = os.path.join(
             os.path.dirname(__file__),
             "../{}_data/{}".format(site, self.config["player_path"]),
         )
         self.load_player_ids(player_path)
-
-        boom_bust_path = os.path.join(
-            os.path.dirname(__file__),
-            "../{}_data/{}".format(site, self.config["boom_bust_path"]),
-        )
-        self.load_boom_bust(boom_bust_path)
 
     # Load config from file
     def load_config(self):
@@ -79,78 +65,45 @@ class PGA_Optimizer:
                 player_name = row[name_key].replace("-", "#")
                 if player_name in self.player_dict:
                     if self.site == "dk":
-                        self.player_dict[player_name]["RealID"] = int(row["ID"])
-                        self.player_dict[player_name]["ID"] = int(row["ID"][-3:])
-                        self.player_dict[player_name]["Matchup"] = row[
-                            "Game Info"
-                        ].split(" ")[0]
+                        self.player_dict[player_name]["ID"] = int(row["ID"])
                     else:
-                        self.player_dict[player_name]["RealID"] = str(row["Id"])
-                        self.player_dict[player_name]["ID"] = int(
-                            row["Id"].split("-")[1]
-                        )
-                        self.player_dict[player_name]["Matchup"] = row["Game"].split(
-                            " "
-                        )[0]
+                        self.player_dict[player_name]["ID"] = row["Id"]
 
     def load_rules(self):
         self.at_most = self.config["at_most"]
         self.at_least = self.config["at_least"]
-        # self.team_limits = self.config["team_limits"]
-        # self.global_team_limit = int(self.config["global_team_limit"])
+        self.exactly = self.config["exactly"]
         self.projection_minimum = int(self.config["projection_minimum"])
         self.randomness_amount = float(self.config["randomness"])
-        # self.matchup_limits = self.config["matchup_limits"]
-        # self.matchup_at_least = self.config["matchup_at_least"]
 
-    # Need standard deviations to perform randomness
-    def load_boom_bust(self, path):
-        with open(path, encoding="utf-8-sig") as file:
-            reader = csv.DictReader(file)
-            for row in reader:
-                player_name = row["Name"].replace("-", "#")
-                if player_name in self.player_dict:
-                    self.player_dict[player_name]["Leverage"] = float(row["Leverage"])
-                    self.player_dict[player_name]["StdDev"] = float(row["stddev"])
-                    self.player_dict[player_name]["Optimal"] = float(row["Optimal %"])
-                    self.player_dict[player_name]["Ceiling"] = float(row["ceiling"])
-                    self.player_dict[player_name]["Floor"] = float(row["floor"])
-                    self.player_dict[player_name]["Top6%"] = float(row["top6%"])
-                    self.player_dict[player_name]["Withdraw"] = float(row["Withdraw"])
-                    self.player_dict[player_name]["Win%"] = float(row["win%"])
-                    self.player_dict[player_name]["Swt6%"] = float(row["swt6%"])
+    def lower_first(self, iterator):
+        return itertools.chain([next(iterator).lower()], iterator)
 
     # Load projections from file
     def load_projections(self, path):
         # Read projections into a dictionary
         with open(path, encoding="utf-8-sig") as file:
-            reader = csv.DictReader(file)
+            reader = csv.DictReader(self.lower_first(file))
             for row in reader:
-                player_name = row["Name"].replace("-", "#")
-                if float(row["Total Pts"]) < self.projection_minimum:
+                player_name = row["name"].replace("-", "#")
+                if float(row["projection"]) < self.projection_minimum:
                     continue
                 self.player_dict[player_name] = {
-                    "Fpts": 0.1,
-                    "ID": 0,
-                    "Salary": 1000,
-                    "Name": "",
-                    "RealID": 0,
-                    "Ownership": 0.1,
-                    "Optimal": 0.1,
-                    "Leverage": 0.0,
-                    "StdDev": 0.1,
-                    "Ceiling": 0.0,
-                    "Floor": 0.0,
-                    "Top6%": 0,
-                    "Withdraw": 0,
-                    "Win%": 0,
-                    "Swt6%": 0,
+                    "Fpts": float(row["projection"]),
+                    "ID": -1,
+                    "Salary": int(row["salary"].replace(",", "")),
+                    "Name": row["name"],
+                    "Ownership": float(row["ownership"] if "ownership" in row else 0.0),
+                    "Optimal": float(row["optimal %"] if "optimal %" in row else 0.0),
+                    "Leverage": float(row["leverage"] if "leverage" in row else 0.0),
+                    "StdDev": float(row["sttdev"] if "sttdev" in row else 0.0),
+                    "Ceiling": float(row["ceiling"] if "ceiling" in row else 0.0),
+                    "Floor": float(row["floor"] if "floor" in row else 0.0),
+                    "Top6%": float(row["top6%"] if "top6%" in row else 0.0),
+                    "Withdraw": float(row["withdraw"] if "withdraw" in row else 0.0),
+                    "Win%": float(row["win%"] if "win%" in row else 0.0),
+                    "Swt6%": float(row["swt6%"] if "swt6%" in row else 0.0),
                 }
-                self.player_dict[player_name]["Fpts"] = float(row["Total Pts"])
-                self.player_dict[player_name]["Salary"] = int(
-                    row["Salary"].replace(",", "")
-                )
-                self.player_dict[player_name]["Name"] = row["Name"]
 
     # Load ownership from file
     def load_ownership(self, path):
@@ -250,20 +203,22 @@ class PGA_Optimizer:
                     )
                 )
 
-            score = str(self.problem.objective)
-            for v in self.problem.variables():
-                score = score.replace(v.name, str(v.varValue))
-
             if i % 100 == 0:
                 print(i)
-            player_names = [
-                v.name.replace("_", " ")
-                for v in self.problem.variables()
-                if v.varValue != 0
-            ]
-            fpts = eval(score)
 
-            self.lineups[fpts] = player_names
+            # Get the lineup and add it to our list
+            players = [
+                player for player in lp_variables if lp_variables[player].varValue != 0
+            ]
+
+            self.lineups.append(players)
+
+            # Ensure this lineup isn't picked again
+            self.problem += (
+                plp.lpSum(lp_variables[player] for player in players)
+                <= len(players) - self.num_uniques,
+                f"Lineup {i}",
+            )
 
             # Set a new random fpts projection within their distribution
             if self.randomness_amount != 0:
@@ -278,42 +233,13 @@ class PGA_Optimizer:
                             ),
                         )
                         * lp_variables[player]
-                        for player in self.player_dict
+                        for player in self.player_dict.keys()
                     ),
                     "Objective",
                 )
-            else:
-                self.problem += plp.lpSum(
-                    self.player_dict[player]["Fpts"] * lp_variables[player]
-                    for player in self.player_dict
-                ) <= (fpts - 0.001)
 
     def output(self):
         print("Lineups done generating. Outputting.")
-        unique = {}
-        for fpts, lineup in self.lineups.items():
-            if lineup not in unique.values():
-                unique[fpts] = lineup
-
-        self.lineups = unique
-        if self.num_uniques != 1:
-            num_uniq_lineups = plp.OrderedDict(
-                sorted(self.lineups.items(), reverse=False, key=lambda t: t[0])
-            )
-            self.lineups = {}
-            for fpts, lineup in num_uniq_lineups.copy().items():
-                temp_lineups = list(num_uniq_lineups.values())
-                temp_lineups.remove(lineup)
-                use_lineup = True
-                for x in temp_lineups:
-                    common_players = set(x) & set(lineup)
-                    roster_size = 6 if self.site == "fd" else 6
-                    if (roster_size - len(common_players)) < self.num_uniques:
-                        use_lineup = False
-                        del num_uniq_lineups[fpts]
-                        break
-                if use_lineup:
-                    self.lineups[fpts] = lineup
 
         out_path = os.path.join(
             os.path.dirname(__file__),
@@ -322,51 +248,49 @@ class PGA_Optimizer:
             ),
         )
         with open(out_path, "w") as f:
-            if self.site == "dk":
-                f.write(
-                    "G,G,G,G,G,G,Salary,Fpts Proj,Ceiling,Own. Product,Own. Sum,Optimal%,Top6%,Win%,Leverage Sum,Swt6%,Withdraw\n"
+            f.write(
+                "G,G,G,G,G,G,Salary,Fpts Proj,Ceiling,Own. Product,Own. Sum,Optimal%,Top6%,Win%,Leverage Sum,Swt6%,Withdraw\n"
+            )
+            for x in self.lineups:
+                # print(id_sum, tple)
+                salary = sum(self.player_dict[player]["Salary"] for player in x)
+                fpts_p = sum(self.player_dict[player]["Fpts"] for player in x)
+                own_p = np.prod(
+                    [self.player_dict[player]["Ownership"] / 100.0 for player in x]
                 )
-                for fpts, x in self.lineups.items():
-                    # print(id_sum, tple)
-                    salary = sum(self.player_dict[player]["Salary"] for player in x)
-                    fpts_p = sum(self.player_dict[player]["Fpts"] for player in x)
-                    own_p = np.prod(
-                        [self.player_dict[player]["Ownership"] / 100.0 for player in x]
-                    )
-                    own_s = sum([self.player_dict[player]["Ownership"] for player in x])
-                    ceil = sum([self.player_dict[player]["Ceiling"] for player in x])
-                    optimal_p = np.prod(
-                        [self.player_dict[player]["Optimal"] / 100.0 for player in x]
-                    )
-                    top6_p = np.prod(
-                        [self.player_dict[player]["Top6%"] / 100.0 for player in x]
-                    )
-                    win_p = np.prod(
-                        [self.player_dict[player]["Win%"] / 100.0 for player in x]
-                    )
-                    leverage_s = sum(
-                        [self.player_dict[player]["Leverage"] for player in x]
-                    )
-                    swt6_p = np.prod(
-                        [self.player_dict[player]["Swt6%"] / 100.0 for player in x]
-                    )
-                    withdraw_p = np.prod(
-                        [self.player_dict[player]["Withdraw"] / 100.0 for player in x]
-                    )
-                    # print(sum(self.player_dict[player]['Ownership'] for player in x))
+                own_s = sum([self.player_dict[player]["Ownership"] for player in x])
+                ceil = sum([self.player_dict[player]["Ceiling"] for player in x])
+                optimal_p = np.prod(
+                    [self.player_dict[player]["Optimal"] / 100.0 for player in x]
+                )
+                top6_p = np.prod(
+                    [self.player_dict[player]["Top6%"] / 100.0 for player in x]
+                )
+                win_p = np.prod(
+                    [self.player_dict[player]["Win%"] / 100.0 for player in x]
+                )
+                leverage_s = sum([self.player_dict[player]["Leverage"] for player in x])
+                swt6_p = np.prod(
+                    [self.player_dict[player]["Swt6%"] / 100.0 for player in x]
+                )
+                withdraw_p = np.prod(
+                    [self.player_dict[player]["Withdraw"] / 100.0 for player in x]
+                )
+                # print(sum(self.player_dict[player]['Ownership'] for player in x))
+                if self.site == "dk":
                     lineup_str = "{} ({}),{} ({}),{} ({}),{} ({}),{} ({}),{} ({}),{},{},{},{},{},{},{},{},{},{},{}".format(
-                        x[0].replace("#", "-"),
-                        self.player_dict[x[0]]["RealID"],
-                        x[1].replace("#", "-"),
-                        self.player_dict[x[1]]["RealID"],
-                        x[2].replace("#", "-"),
-                        self.player_dict[x[2]]["RealID"],
-                        x[3].replace("#", "-"),
-                        self.player_dict[x[3]]["RealID"],
-                        x[4].replace("#", "-"),
-                        self.player_dict[x[4]]["RealID"],
-                        x[5].replace("#", "-"),
-                        self.player_dict[x[5]]["RealID"],
+                        self.player_dict[x[0]]["Name"],
+                        self.player_dict[x[0]]["ID"],
+                        self.player_dict[x[1]]["Name"],
+                        self.player_dict[x[1]]["ID"],
+                        self.player_dict[x[2]]["Name"],
+                        self.player_dict[x[2]]["ID"],
+                        self.player_dict[x[3]]["Name"],
+                        self.player_dict[x[3]]["ID"],
+                        self.player_dict[x[4]]["Name"],
+                        self.player_dict[x[4]]["ID"],
+                        self.player_dict[x[5]]["Name"],
+                        self.player_dict[x[5]]["ID"],
                         salary,
                         round(fpts_p, 2),
                         ceil,
@@ -380,7 +304,31 @@ class PGA_Optimizer:
                         withdraw_p,
                     )
                     f.write("%s\n" % lineup_str)
-            else:
-                ## TODO  - add fd
-                pass
+                else:
+                    lineup_str = "{}:{},{}:{},{}:{},{}:{},{}:{},{}:{},{},{},{},{},{},{},{},{},{},{},{}".format(
+                        self.player_dict[x[0]]["ID"],
+                        self.player_dict[x[0]]["Name"],
+                        self.player_dict[x[1]]["ID"],
+                        self.player_dict[x[1]]["Name"],
+                        self.player_dict[x[2]]["ID"],
+                        self.player_dict[x[2]]["Name"],
+                        self.player_dict[x[3]]["ID"],
+                        self.player_dict[x[3]]["Name"],
+                        self.player_dict[x[4]]["ID"],
+                        self.player_dict[x[4]]["Name"],
+                        self.player_dict[x[5]]["ID"],
+                        self.player_dict[x[5]]["Name"],
+                        salary,
+                        round(fpts_p, 2),
+                        ceil,
+                        own_p,
+                        own_s,
+                        optimal_p,
+                        top6_p,
+                        win_p,
+                        leverage_s,
+                        swt6_p,
+                        withdraw_p,
+                    )
+                    f.write("%s\n" % lineup_str)
         print("Output done.")
