@@ -96,7 +96,7 @@ class PGA_Optimizer:
                     "Ownership": float(row["ownership"] if "ownership" in row else 0.0),
                     "Optimal": float(row["optimal %"] if "optimal %" in row else 0.0),
                     "Leverage": float(row["leverage"] if "leverage" in row else 0.0),
-                    "StdDev": float(row["sttdev"] if "sttdev" in row else 0.0),
+                    "StdDev": float(row["stddev"] if "stddev" in row else 0.0),
                     "Ceiling": float(row["ceiling"] if "ceiling" in row else 0.0),
                     "Floor": float(row["floor"] if "floor" in row else 0.0),
                     "Top6%": float(row["top6%"] if "top6%" in row else 0.0),
@@ -118,6 +118,7 @@ class PGA_Optimizer:
                     )
 
     def optimize(self):
+        print(self.player_dict)
         # Setup our linear programming equation - https://en.wikipedia.org/wiki/Linear_programming
         # We will use PuLP as our solver - https://coin-or.github.io/pulp/
 
