@@ -594,7 +594,7 @@ class PGA_GPP_Simulator:
         player_cluster = kmeans_5.predict(scaled_new_data)[0]
 
         # Load the GMM model for the predicted cluster
-        gmm = pickle.load(open(f"src/cluster_data/gmm_cluster_{player_cluster}.pkl", "rb"))
+        gmm = pickle.load(open(os.path.join(os.path.dirname(__file__), f"cluster_data/gmm_cluster_{player_cluster}.pkl"), "rb"))
 
         # Player's projected fantasy points
         player_projected_fpts = v['Fpts']
@@ -700,8 +700,8 @@ class PGA_GPP_Simulator:
             os.makedirs(plot_folder)
 
         if self.cut_event:
-            kmeans_5 = pickle.load(open("src/cluster_data/kmeans_5_model.pkl", "rb"))
-            scaler = pickle.load(open("src/cluster_data/scaler.pkl", "rb"))
+            kmeans_5 = pickle.load(open(os.path.join(os.path.dirname(__file__), "cluster_data/kmeans_5_model.pkl"), "rb"))
+            scaler = pickle.load(open(os.path.join(os.path.dirname(__file__), "cluster_data/scaler.pkl"), "rb"))
             player_data = list(self.player_dict.items())
 
             # Create a pool of workers and distribute the work
